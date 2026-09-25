@@ -50,20 +50,7 @@ let fattyBones = {};
 let fattyModelReady = false;
 let fattyRenderWidth = 0;
 let fattyRenderHeight = 0;
-const fattyRestAngles = {
-  Fatty_Root: 0,
-  Body: 0,
-  Head: 0,
-  LeftUpperArm: Math.atan2(0.15, -0.30),
-  LeftForearm: Math.atan2(0.05, -0.18),
-  RightUpperArm: Math.atan2(0.10, 0.30),
-  RightForearm: Math.atan2(0.05, 0.18),
-  LeftUpperLeg: Math.atan2(0.27, 0),
-  LeftLowerLeg: Math.atan2(0.13, 0),
-  RightUpperLeg: Math.atan2(0.27, 0),
-  RightLowerLeg: Math.atan2(0.13, 0),
-};
-
+const fattyRestWorld = {};
 const fattyBoneNames = [
   'Fatty_Root', 'Body', 'Head',
   'LeftUpperArm', 'LeftForearm', 'LeftHand',
@@ -284,24 +271,62 @@ function normalizeAngle(angle) {
   return angle;
 }
 
-function setBoneRotation(name, targetAngle) {
-  const bone = fattyBones[name];
-  if (!bone) return;
-  const rest = fattyRestAngles[name] ?? 0;
-  bone.rotation.z = normalizeAngle(targetAngle - rest);
+function captureFattyRestPose() {
+  if (!fattyModel) return;
+  fattyModel.updateMatrixWorld(true);
+  for (const name of fattyBoneNames) {
+    const bone = fattyBones[name];
+    if (!bone) continue;
+    const worldPos = new THREE.Vector3();
+    const worldQuat = new THREE.Quaternion();
+    bone.getWorldPosition(worldPos);
+    bone.getWorldQuaternion(worldQuat);
+
+    const child = bone.children.find((node) => node.isBone);
+    let axis = new THREE.Vector3(0, 1, 0);
+    if (child) {
+      const childPos = new THREE.Vector3();
+      child.getWorldPosition(childPos);
+      axis.copy(childPos).sub(worldPos).normalize();
+    } else {
+      // Head/hand/foot에는 다음 본이 없으므로 모델의 +Y 축을 기준축으로 사용합니다.
+      axis.applyQuaternion(worldQuat).normalize();
+    }
+    fattyRestWorld[name] = { worldPos, worldQuat, axis };
+  }
 }
 
-function screenAngleToModelAngle(first, second) {
-  // MediaPipe 화면 좌표(Y↓) → GLB의 로컬 모델 좌표(Y↑).
-  // 모델 전체를 Z축으로 180° 돌려 정방향으로 세우므로 그 회전도 보정합니다.
-  return -angleBetween(first, second) * Math.PI / 180 - Math.PI;
+function aimBoneToScreenSegment(name, first, second) {
+  const bone = fattyBones[name];
+  const rest = fattyRestWorld[name];
+  if (!bone || !rest) return;
+
+  // MediaPipe 화면 좌표(Y↓)를 Three.js 평면 좌표(Y↑)로 1:1 변환합니다.
+  const target = new THREE.Vector3(
+    second.x - first.x,
+    -(second.y - first.y),
+    0,
+  );
+  if (target.lengthSq() < 1e-8) return;
+  target.normalize();
+
+  // GLB의 '원래 본 방향'을 현재 프레임의 MediaPipe 관절 방향으로 직접 맞춥니다.
+  const delta = new THREE.Quaternion().setFromUnitVectors(rest.axis, target);
+  const desiredWorld = delta.multiply(rest.worldQuat.clone());
+
+  if (bone.parent?.isBone) {
+    const parentWorld = new THREE.Quaternion();
+    bone.parent.getWorldQuaternion(parentWorld);
+    bone.quaternion.copy(parentWorld.invert().multiply(desiredWorld));
+  } else {
+    const modelWorld = new THREE.Quaternion();
+    fattyModel.getWorldQuaternion(modelWorld);
+    bone.quaternion.copy(modelWorld.invert().multiply(desiredWorld));
+  }
 }
 
-function setPoseBoneRotation(name, targetModelWorldAngle, parentModelWorldAngle = 0) {
-  const bone = fattyBones[name];
-  if (!bone) return;
-  const rest = fattyRestAngles[name] ?? 0;
-  bone.rotation.z = normalizeAngle(targetModelWorldAngle - parentModelWorldAngle - rest);
+function aimHeadToPose(name, neck, nose) {
+  aimBoneToScreenSegment(name, neck, nose);
 }
 
 function updateRig(landmarks) {
@@ -319,73 +344,40 @@ function updateRig(landmarks) {
   const rightKnee = getPoint(landmarks, 'rightKnee');
   const leftAnkle = getPoint(landmarks, 'leftAnkle');
   const rightAnkle = getPoint(landmarks, 'rightAnkle');
-  const earLeft = getPoint(landmarks, 'leftEar');
-  const earRight = getPoint(landmarks, 'rightEar');
+  const nose = getPoint(landmarks, 'nose');
 
   const shoulderCenter = midpoint(leftShoulder, rightShoulder);
   const hipCenter = midpoint(leftHip, rightHip);
-  const torsoAngle = -angleBetween(leftShoulder, rightShoulder) * Math.PI / 180;
-  const shoulderWidth = distance(leftShoulder, rightShoulder) * 1000;
-  const hipWidth = distance(leftHip, rightHip) * 1000;
-  const torsoLength = distance(shoulderCenter, hipCenter) * 562.5;
-  const bodyWidth = clamp(Math.max(shoulderWidth * 1.55, hipWidth * 1.45), 180, 360);
-  const bodyHeight = clamp(torsoLength * 1.32, 170, 280);
 
-  // 모델 전체 크기/위치만 사람의 포즈에 맞춥니다. 메시 자체의 스케일은 변형하지 않습니다.
-  const scale = clamp(bodyHeight / 220, 0.55, 1.35);
-  fattyModel.scale.setScalar(scale);
-
+  // 모델의 위치는 골반 중심만 따라갑니다. 메시/본 길이/스케일은 매 프레임 건드리지 않습니다.
   const aspect = fattyRenderHeight ? fattyRenderWidth / fattyRenderHeight : 16 / 9;
   const worldHeight = 2.6;
+  fattyModel.scale.setScalar(1);
   fattyModel.position.x = (0.5 - hipCenter.x) * worldHeight * aspect;
   fattyModel.position.y = (0.5 - hipCenter.y) * worldHeight;
+  fattyModel.updateMatrixWorld(true);
 
-  // GLB의 기본 포즈는 위아래가 반대 방향이라 모델 전체를 한 번 뒤집습니다.
-  // 이후 본에는 이 전역 회전을 다시 중복 적용하지 않도록 로컬 관절 회전만 넣습니다.
-  fattyModel.rotation.z = Math.PI;
+  // 핵심: MediaPipe 관절 ↔ GLB 본을 정확히 1:1로 대응시킵니다.
+  // Body: 골반 → 어깨
+  aimBoneToScreenSegment('Body', hipCenter, shoulderCenter);
+  // Head: 어깨 중앙 → 코
+  aimHeadToPose('Head', shoulderCenter, nose);
 
-  // Body는 GLB의 기준 자세(0°)를 기준으로 몸통 기울기만 적용합니다.
-  const bodyWorld = torsoAngle;
-  setBoneRotation('Fatty_Root', 0);
-  fattyBones.Body.rotation.z = normalizeAngle(bodyWorld);
+  // 왼팔
+  aimBoneToScreenSegment('LeftUpperArm', leftShoulder, leftElbow);
+  aimBoneToScreenSegment('LeftForearm', leftElbow, leftWrist);
+  // 오른팔
+  aimBoneToScreenSegment('RightUpperArm', rightShoulder, rightElbow);
+  aimBoneToScreenSegment('RightForearm', rightElbow, rightWrist);
 
-  // 팔: MediaPipe의 절대 방향을 모델 로컬 방향으로 변환한 뒤,
-  // 부모 본의 회전과 GLB 원래 본 방향을 빼서 '로컬 회전'으로 적용합니다.
-  const leftUpperWorld = screenAngleToModelAngle(leftShoulder, leftElbow);
-  const leftForearmWorld = screenAngleToModelAngle(leftElbow, leftWrist);
-  const rightUpperWorld = screenAngleToModelAngle(rightShoulder, rightElbow);
-  const rightForearmWorld = screenAngleToModelAngle(rightElbow, rightWrist);
+  // 왼다리
+  aimBoneToScreenSegment('LeftUpperLeg', leftHip, leftKnee);
+  aimBoneToScreenSegment('LeftLowerLeg', leftKnee, leftAnkle);
+  // 오른다리
+  aimBoneToScreenSegment('RightUpperLeg', rightHip, rightKnee);
+  aimBoneToScreenSegment('RightLowerLeg', rightKnee, rightAnkle);
 
-  setPoseBoneRotation('LeftUpperArm', leftUpperWorld, bodyWorld);
-  const leftUpperLocal = fattyBones.LeftUpperArm?.rotation.z ?? 0;
-  const leftUpperActualWorld = bodyWorld + (fattyRestAngles.LeftUpperArm ?? 0) + leftUpperLocal;
-  setPoseBoneRotation('LeftForearm', leftForearmWorld, leftUpperActualWorld);
-
-  setPoseBoneRotation('RightUpperArm', rightUpperWorld, bodyWorld);
-  const rightUpperLocal = fattyBones.RightUpperArm?.rotation.z ?? 0;
-  const rightUpperActualWorld = bodyWorld + (fattyRestAngles.RightUpperArm ?? 0) + rightUpperLocal;
-  setPoseBoneRotation('RightForearm', rightForearmWorld, rightUpperActualWorld);
-
-  // 다리의 부모는 Fatty_Root이므로 몸통 회전을 상속하지 않습니다.
-  const leftUpperLegWorld = screenAngleToModelAngle(leftHip, leftKnee);
-  const leftLowerLegWorld = screenAngleToModelAngle(leftKnee, leftAnkle);
-  const rightUpperLegWorld = screenAngleToModelAngle(rightHip, rightKnee);
-  const rightLowerLegWorld = screenAngleToModelAngle(rightKnee, rightAnkle);
-
-  setPoseBoneRotation('LeftUpperLeg', leftUpperLegWorld, 0);
-  const leftUpperLegLocal = fattyBones.LeftUpperLeg?.rotation.z ?? 0;
-  const leftUpperLegActualWorld = (fattyRestAngles.LeftUpperLeg ?? 0) + leftUpperLegLocal;
-  setPoseBoneRotation('LeftLowerLeg', leftLowerLegWorld, leftUpperLegActualWorld);
-
-  setPoseBoneRotation('RightUpperLeg', rightUpperLegWorld, 0);
-  const rightUpperLegLocal = fattyBones.RightUpperLeg?.rotation.z ?? 0;
-  const rightUpperLegActualWorld = (fattyRestAngles.RightUpperLeg ?? 0) + rightUpperLegLocal;
-  setPoseBoneRotation('RightLowerLeg', rightLowerLegWorld, rightUpperLegActualWorld);
-
-  // 머리는 Body의 회전을 고려해서 목에서 자연스럽게 따라오도록 합니다.
-  const headWorld = screenAngleToModelAngle(earLeft, earRight);
-  setPoseBoneRotation('Head', headWorld, bodyWorld);
-
+  // 손/발은 해당 마지막 관절에 붙어 있도록 두고, 별도 스케일/늘이기는 하지 않습니다.
   if (fattyRenderer) fattyRenderer.render(fattyScene, fattyCamera);
 }
 
@@ -426,7 +418,6 @@ async function loadFattyModel() {
   const loader = new GLTFLoader();
   const gltf = await loader.loadAsync(FATTY_MODEL_PATH);
   fattyModel = gltf.scene;
-  fattyModel.rotation.z = Math.PI;
   fattyModel.traverse((object) => {
     if (object.isBone && fattyBoneNames.includes(object.name)) {
       fattyBones[object.name] = object;
@@ -442,6 +433,8 @@ async function loadFattyModel() {
   });
 
   fattyScene.add(fattyModel);
+  fattyModel.updateMatrixWorld(true);
+  captureFattyRestPose();
   fattyModelReady = true;
   resizeFattyRenderer();
   setRigVisible(false);
