@@ -1336,8 +1336,10 @@ async function loadFattyModel() {
 
   resizeFattyRenderer();
 
+  // GLB가 정상적으로 로드되었는지 바로 확인할 수 있도록
+  // 포즈 검출 전에도 기본 자세의 모델을 보여 줍니다.
   setRigVisible(
-    false
+    true
   );
 
   fattyRenderer.render(
@@ -1959,6 +1961,16 @@ loadFattyModel().catch(
     console.error(
       '지방이 3D 모델을 불러오지 못했어요.',
       error
+    );
+
+    setAppState(
+      'idle',
+      '모델 오류'
+    );
+
+    showMessage(
+      'fatty.glb 모델을 불러오지 못했어요. 파일 경로와 로컬 서버를 확인해 주세요.',
+      true
     );
   }
 );
