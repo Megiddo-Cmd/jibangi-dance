@@ -161,9 +161,13 @@ async function refreshCameraList(selectedDeviceId = elements.cameraSelect.value)
 }
 
 async function requestCameraPermissionAndRefresh() {
-  if (!hasCameraApi() || !window.isSecureContext) {
-    await refreshCameraList();
-    return;
+  if (!hasCameraApi()) {
+    elements.cameraHint.textContent = '이 브라우저에서는 카메라 기능을 사용할 수 없어요.';
+    return false;
+  }
+  if (!window.isSecureContext) {
+    elements.cameraHint.textContent = '카메라 권한을 요청하려면 HTTPS 또는 localhost에서 열어 주세요.';
+    return false;
   }
   try {
     const previewStream = await navigator.mediaDevices.getUserMedia({
@@ -171,10 +175,13 @@ async function requestCameraPermissionAndRefresh() {
       audio: false,
     });
     await refreshCameraList();
+    elements.cameraSelect.dataset.permissionGranted = 'true';
     previewStream.getTracks().forEach((track) => track.stop());
     elements.cameraHint.textContent = '목록에서 iPhone 또는 원하는 카메라를 골라 주세요.';
+    return true;
   } catch (error) {
     elements.cameraHint.textContent = getCameraErrorMessage(error);
+    return false;
   }
 }
 
@@ -190,7 +197,8 @@ async function resetCamera() {
   elements.cameraSelect.value = '';
   elements.cameraHint.textContent = '기본 카메라를 다시 선택하는 중…';
 
-  await requestCameraPermissionAndRefresh();
+  const permissionGranted = await requestCameraPermissionAndRefresh();
+  if (!permissionGranted) return;
   elements.cameraSelect.value = '';
 
   if (wasRunning) {
@@ -687,9 +695,14 @@ loadFattyModel().catch((error) => {
   console.error('지방이 3D 모델을 불러오지 못했어요.', error);
 });
 window.addEventListener('resize', resizeFattyRenderer);
-refreshCameraList();
+// 개인정보 보호상 페이지를 열자마자 enumerateDevices()를 호출하지 않습니다.
+// 사용자가 카메라 시작/리셋을 눌러 권한을 승인한 뒤에만 목록을 채웁니다.
 if (navigator.mediaDevices) {
-  navigator.mediaDevices.addEventListener?.('devicechange', () => refreshCameraList());
+  navigator.mediaDevices.addEventListener?.('devicechange', () => {
+    if (elements.cameraSelect.dataset.permissionGranted === 'true') {
+      refreshCameraList();
+    }
+  });
 }
 
 window.addEventListener('beforeunload', stopCamera);
