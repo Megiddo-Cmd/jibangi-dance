@@ -273,55 +273,98 @@ function normalizeAngle(angle) {
 
 function captureFattyRestPose() {
   if (!fattyModel) return;
+
   fattyModel.updateMatrixWorld(true);
+
   for (const name of fattyBoneNames) {
     const bone = fattyBones[name];
     if (!bone) continue;
+
     const worldPos = new THREE.Vector3();
     const worldQuat = new THREE.Quaternion();
+
     bone.getWorldPosition(worldPos);
     bone.getWorldQuaternion(worldQuat);
 
+    // 실제 자식 본 방향을 rest 방향으로 사용
     const child = bone.children.find((node) => node.isBone);
+
     let axis = new THREE.Vector3(0, 1, 0);
+
     if (child) {
       const childPos = new THREE.Vector3();
       child.getWorldPosition(childPos);
-      axis.copy(childPos).sub(worldPos).normalize();
+
+      axis.copy(childPos).sub(worldPos);
+
+      if (axis.lengthSq() > 0.000001) {
+        axis.normalize();
+      } else {
+        axis.set(0, 1, 0);
+      }
     } else {
-      // Head/hand/foot에는 다음 본이 없으므로 모델의 +Y 축을 기준축으로 사용합니다.
-      axis.applyQuaternion(worldQuat).normalize();
+      // 끝 본은 자신의 로컬 +Y 방향을 사용
+      axis.set(0, 1, 0)
+        .applyQuaternion(worldQuat)
+        .normalize();
     }
-    fattyRestWorld[name] = { worldPos, worldQuat, axis };
+
+    fattyRestWorld[name] = {
+      worldPos: worldPos.clone(),
+      worldQuat: worldQuat.clone(),
+      axis: axis.clone(),
+    };
   }
 }
 
 function aimBoneToScreenSegment(name, first, second) {
   const bone = fattyBones[name];
   const rest = fattyRestWorld[name];
+
   if (!bone || !rest) return;
 
-  // MediaPipe 화면 좌표(Y↓)를 Three.js 평면 좌표(Y↑)로 1:1 변환합니다.
+  // MediaPipe: Y 아래쪽
+  // Three.js: Y 위쪽
   const target = new THREE.Vector3(
     second.x - first.x,
     -(second.y - first.y),
-    0,
+    0
   );
-  if (target.lengthSq() < 1e-8) return;
+
+  if (target.lengthSq() < 0.000001) return;
+
   target.normalize();
 
-  // GLB의 '원래 본 방향'을 현재 프레임의 MediaPipe 관절 방향으로 직접 맞춥니다.
-  const delta = new THREE.Quaternion().setFromUnitVectors(rest.axis, target);
-  const desiredWorld = delta.multiply(rest.worldQuat.clone());
+  // REST 본 방향 → 현재 MediaPipe 관절 방향
+  const correction = new THREE.Quaternion()
+    .setFromUnitVectors(rest.axis, target);
 
-  if (bone.parent?.isBone) {
+  const desiredWorld = correction
+    .clone()
+    .multiply(rest.worldQuat);
+
+  // 부모 본의 월드 회전을 제거해서
+  // 현재 본에는 LOCAL 회전만 적용
+  if (bone.parent && bone.parent.isBone) {
     const parentWorld = new THREE.Quaternion();
+
     bone.parent.getWorldQuaternion(parentWorld);
-    bone.quaternion.copy(parentWorld.invert().multiply(desiredWorld));
+
+    bone.quaternion.copy(
+      parentWorld
+        .invert()
+        .multiply(desiredWorld)
+    );
   } else {
     const modelWorld = new THREE.Quaternion();
+
     fattyModel.getWorldQuaternion(modelWorld);
-    bone.quaternion.copy(modelWorld.invert().multiply(desiredWorld));
+
+    bone.quaternion.copy(
+      modelWorld
+        .invert()
+        .multiply(desiredWorld)
+    );
   }
 }
 
