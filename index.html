@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#18131f" />
+    <title>지방이 댄스 스튜디오</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">🥟</div>
+          <div>
+            <p class="eyebrow">FATTY MOTION LAB</p>
+            <h1>지방이 댄스 스튜디오</h1>
+          </div>
+        </div>
+        <div class="live-pill" id="livePill" data-state="idle">
+          <span class="live-dot"></span>
+          <span id="liveLabel">대기 중</span>
+        </div>
+      </header>
+
+      <section class="hero-grid">
+        <section class="stage-card" aria-label="지방이 모션 캡처 화면">
+          <div class="stage-toolbar">
+            <div>
+              <p class="section-kicker">REAL-TIME RIG</p>
+              <h2>움직이면 지방이도 춤춰요 <span>✨</span></h2>
+            </div>
+            <div class="stage-stats" aria-live="polite">
+              <span><strong id="fpsValue">--</strong> FPS</span>
+              <span><strong id="confidenceValue">--</strong> 신뢰도</span>
+            </div>
+          </div>
+
+          <div class="stage" id="stage">
+            <video id="camera" autoplay playsinline muted></video>
+            <div class="stage-tint"></div>
+            <canvas id="rig" class="rig" aria-label="실시간으로 움직이는 지방이 캐릭터"></canvas>
+            <svg id="noPoseIllustration" class="no-pose-illustration" viewBox="0 0 1000 562.5" role="img" aria-hidden="true">
+              <circle cx="500" cy="248" r="75" fill="#fff38d" stroke="#17131d" stroke-width="3" />
+              <circle cx="473" cy="240" r="8" fill="#17131d" />
+              <circle cx="527" cy="240" r="8" fill="#17131d" />
+              <path d="M466 274 Q500 298 534 274" fill="none" stroke="#17131d" stroke-width="5" stroke-linecap="round" />
+              <text x="500" y="365" text-anchor="middle" class="empty-state-text">카메라를 켜면 지방이가 나타나요!</text>
+            </svg>
+            <div class="stage-message" id="stageMessage">
+              <span class="stage-message-icon">📷</span>
+              <span id="stageMessageText">아래 버튼을 눌러 카메라를 시작해 주세요</span>
+            </div>
+            <button class="dance-exit" id="danceExitButton" type="button" aria-label="댄스 화면 나가기">✕ 나가기</button>
+            <div class="corner corner-tl"></div>
+            <div class="corner corner-tr"></div>
+            <div class="corner corner-bl"></div>
+            <div class="corner corner-br"></div>
+          </div>
+
+          <div class="stage-actions">
+            <button class="primary-button" id="startButton" type="button">
+              <span>▶</span> 지방이 깨우기
+            </button>
+            <button class="secondary-button" id="stopButton" type="button" disabled>
+              잠깐 쉬기
+            </button>
+            <button class="icon-button" id="mirrorButton" type="button" aria-pressed="true" title="좌우 반전 켜기/끄기">
+              ↔ <span>거울 모드</span>
+            </button>
+          </div>
+        </section>
+
+        <aside class="control-card">
+          <div class="card-heading">
+            <div>
+              <p class="section-kicker">CONTROL ROOM</p>
+              <h2>움직임 설정</h2>
+            </div>
+            <span class="sparkle">✦</span>
+          </div>
+
+          <div class="camera-picker">
+            <div class="camera-picker-label">
+              <label for="cameraSelect"><strong>카메라</strong></label>
+              <small id="cameraHint">맥 기본 카메라 또는 iPhone 연속성 카메라를 골라요.</small>
+            </div>
+            <div class="camera-picker-controls">
+              <select id="cameraSelect" aria-label="사용할 카메라">
+                <option value="">자동으로 선택</option>
+              </select>
+              <button class="refresh-button" id="refreshCameraButton" type="button" title="카메라 목록 새로고침" aria-label="카메라 목록 새로고침">↻</button>
+            </div>
+          </div>
+
+          <label class="range-row" for="smoothingRange">
+            <span>
+              <strong>부드러움</strong>
+              <small>관절 움직임을 얼마나 매끈하게 할까요?</small>
+            </span>
+            <output id="smoothingValue" for="smoothingRange">60%</output>
+          </label>
+          <input id="smoothingRange" type="range" min="0" max="90" value="60" />
+
+          <div class="tips-box">
+            <div class="tips-icon">💡</div>
+            <div>
+              <strong>잘 보이게 춤추는 팁</strong>
+              <p>상반신부터 전신까지 화면 안에 들어오면 지방이가 더 정확하게 따라와요.</p>
+            </div>
+          </div>
+
+          <div class="tracking-list">
+            <div class="tracking-list-heading">
+              <span>트래킹 중인 관절</span>
+              <span class="joint-count">14 LANDMARKS</span>
+            </div>
+            <div class="joint-tags">
+              <span>머리</span><span>어깨</span><span>팔꿈치</span><span>손목</span>
+              <span>골반</span><span>무릎</span><span>발목</span>
+            </div>
+          </div>
+
+          <p class="privacy-note">🔒 카메라 원본은 화면에 보이지 않고, 브라우저 안에서만 추적돼요.</p>
+        </aside>
+      </section>
+
+      <footer class="footer-note">
+        <span>MediaPipe Pose Landmarker</span>
+        <span class="footer-separator">•</span>
+        <span>브라우저 모션 캡처 프로토타입</span>
+      </footer>
+    </main>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+        }
+      }
+    </script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
