@@ -101,7 +101,6 @@ function updateRig(points) {
   const shoulderMid = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
   const hipMid = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
 
-  // Move/scale the puppet to the tracked person's torso.
   const torsoH = clamp(dist(shoulderMid, hipMid), 0.35, 1.2);
   fatty.position.x = lerp(fatty.position.x, shoulderMid.x * 0.18, 0.22);
   fatty.position.y = lerp(fatty.position.y, hipMid.y * 0.12, 0.22);
@@ -109,38 +108,32 @@ function updateRig(points) {
   const s = lerp(fatty.scale.x, targetScale, 0.12);
   fatty.scale.setScalar(s);
 
-  // Torso tilt.
   if (bones.Body) {
     const torsoAngle = angle(hipMid, shoulderMid);
     bones.Body.rotation.z = lerp(bones.Body.rotation.z, torsoAngle - Math.PI/2, 0.35);
   }
 
-  // Arms: generated rig's rest vectors are approximately diagonal.
   setBoneAngle('LeftUpperArm', ls, p.leftElbow, Math.atan2(0.15, -0.30));
   setBoneAngle('LeftForearm', p.leftElbow, p.leftWrist, Math.atan2(0.05, -0.18));
   setBoneAngle('RightUpperArm', rs, p.rightElbow, Math.atan2(0.10, 0.30));
   setBoneAngle('RightForearm', p.rightElbow, p.rightWrist, Math.atan2(0.05, 0.18));
 
-  // Legs.
   setBoneAngle('LeftUpperLeg', lh, p.leftKnee, Math.PI/2);
   setBoneAngle('LeftLowerLeg', p.leftKnee, p.leftAnkle, Math.PI/2);
   setBoneAngle('RightUpperLeg', rh, p.rightKnee, Math.PI/2);
   setBoneAngle('RightLowerLeg', p.rightKnee, p.rightAnkle, Math.PI/2);
 
-  // Head follows nose direction / torso, with a gentle yaw illusion.
   if (bones.Head && p.nose) {
     const headTilt = angle(shoulderMid, p.nose) - Math.PI/2;
     bones.Head.rotation.z = lerp(bones.Head.rotation.z, headTilt, 0.22);
   }
 
-  // Hands and feet get a little extra follow.
   if (bones.LeftHand) bones.LeftHand.rotation.z = lerp(bones.LeftHand.rotation.z, bones.LeftForearm?.rotation.z ?? 0, 0.25);
   if (bones.RightHand) bones.RightHand.rotation.z = lerp(bones.RightHand.rotation.z, bones.RightForearm?.rotation.z ?? 0, 0.25);
   if (bones.LeftFoot) bones.LeftFoot.rotation.z = lerp(bones.LeftFoot.rotation.z, bones.LeftLowerLeg?.rotation.z ?? 0, 0.25);
   if (bones.RightFoot) bones.RightFoot.rotation.z = lerp(bones.RightFoot.rotation.z, bones.RightLowerLeg?.rotation.z ?? 0, 0.25);
 }
 
-// ---------- MediaPipe ----------
 async function initPose() {
   if (landmarker) return;
   setState('loading', 'AI 준비 중');
@@ -157,6 +150,7 @@ async function initPose() {
 function mirroredPoints(points) {
   return points.map(p => ({ x: mirrored ? 1-p.x : p.x, y:p.y, z:p.z ?? 0, visibility:p.visibility ?? 1 }));
 }
+
 function smooth(points) {
   const next = mirroredPoints(points);
   const amount = 0.1 + (1 - Number(el.smoothing.value)/100) * 0.82;
