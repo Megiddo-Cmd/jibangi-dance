@@ -51,13 +51,28 @@ let fattyModelReady = false;
 let fattyRenderWidth = 0;
 let fattyRenderHeight = 0;
 const fattyRestWorld = {};
+// fatty.glb의 실제 스켈레톤 이름입니다.
 const fattyBoneNames = [
-  'Fatty_Root', 'Body', 'Head',
-  'LeftUpperArm', 'LeftForearm', 'LeftHand',
-  'RightUpperArm', 'RightForearm', 'RightHand',
-  'LeftUpperLeg', 'LeftLowerLeg', 'LeftFoot',
-  'RightUpperLeg', 'RightLowerLeg', 'RightFoot',
+  'body', 'head',
+  'upperArm.L', 'forearm.L',
+  'upperArm.R', 'forearm.R',
+  'thigh.L', 'shin.L',
+  'thigh.R', 'shin.R',
 ];
+
+// 앱에서 사용하는 의미 있는 이름 → GLB의 실제 본 이름
+const fattyBoneMap = {
+  Body: 'body',
+  Head: 'head',
+  LeftUpperArm: 'upperArm.L',
+  LeftForearm: 'forearm.L',
+  RightUpperArm: 'upperArm.R',
+  RightForearm: 'forearm.R',
+  LeftUpperLeg: 'thigh.L',
+  LeftLowerLeg: 'shin.L',
+  RightUpperLeg: 'thigh.R',
+  RightLowerLeg: 'shin.R',
+};
 
 const landmarkIndex = {
   nose: 0,
@@ -318,8 +333,9 @@ function captureFattyRestPose() {
 }
 
 function aimBoneToScreenSegment(name, first, second) {
-  const bone = fattyBones[name];
-  const rest = fattyRestWorld[name];
+  const actualName = fattyBoneMap[name] ?? name;
+  const bone = fattyBones[actualName];
+  const rest = fattyRestWorld[actualName];
 
   if (!bone || !rest) return;
 
@@ -474,6 +490,11 @@ async function loadFattyModel() {
       }
     }
   });
+
+  // GLB의 기본 자세는 몸통이 Z축을 향하고 있어 화면에서 눕습니다.
+  // X축으로 90도 세워서 MediaPipe의 2D X/Y 방향과 자연스럽게 맞춥니다.
+  fattyModel.rotation.set(Math.PI / 2, 0, 0);
+  fattyModel.scale.setScalar(1);
 
   fattyScene.add(fattyModel);
   fattyModel.updateMatrixWorld(true);
