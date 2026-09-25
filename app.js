@@ -178,6 +178,26 @@ async function requestCameraPermissionAndRefresh() {
   }
 }
 
+// 카메라 리셋: 현재 선택/스트림을 버리고 기본 카메라(자동 선택)로 되돌립니다.
+async function resetCamera() {
+  const wasRunning = isRunning;
+
+  // 현재 카메라를 완전히 종료해 기존 MediaStream이 장치를 붙잡고 있지 않게 합니다.
+  if (isRunning) stopCamera();
+
+  // 선택값을 반드시 초기화합니다. 기존 코드의 refresh는 현재 선택값을
+  // 보존하기 때문에 '새로고침'만 눌러서는 카메라 리셋이 되지 않았습니다.
+  elements.cameraSelect.value = '';
+  elements.cameraHint.textContent = '기본 카메라를 다시 선택하는 중…';
+
+  await requestCameraPermissionAndRefresh();
+  elements.cameraSelect.value = '';
+
+  if (wasRunning) {
+    await startCamera();
+  }
+}
+
 function setAppState(state, label) {
   elements.livePill.dataset.state = state;
   elements.liveLabel.textContent = label;
@@ -655,7 +675,7 @@ elements.cameraSelect.addEventListener('change', async () => {
   stopCamera();
   await startCamera();
 });
-elements.refreshCameraButton.addEventListener('click', requestCameraPermissionAndRefresh);
+elements.refreshCameraButton.addEventListener('click', resetCamera);
 elements.smoothingRange.addEventListener('input', (event) => {
   elements.smoothingValue.textContent = `${event.target.value}%`;
 });
