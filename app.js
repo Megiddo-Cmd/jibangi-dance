@@ -178,22 +178,100 @@ async function refreshCameras(selected='') {
 
 async function startCamera() {
   try {
+    // 1. 가장 먼저 카메라 권한 요청
+    setState('loading', '카메라 권한 요청 중');
+    showMessage('카메라 사용 권한을 허용해 주세요.', true);
+
+    const permissionStream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: false
+    });
+
+    // 권한 확인용으로 받은 스트림은 바로 종료
+    permissionStream.getTracks().forEach(track => track.stop());
+
+    // 2. 이제 카메라 권한이 확인됐으므로 AI 초기화
+    setState('loading', 'AI 준비 중');
+    showMessage('모션 캡처 AI를 준비하는 중…', true);
+
     await initPose();
-    if (stream) stopCamera();
+
+    // 기존 스트림이 있다면 정리
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      stream = null;
+    }
+
+    // 3. 카메라 목록 가져오기
+    await refreshCameras();
+
     const deviceId = el.cameraSelect.value;
-    const constraints = { video: deviceId ? {deviceId:{exact:deviceId}, width:{ideal:1280}, height:{ideal:720}} : {facingMode:'user', width:{ideal:1280}, height:{ideal:720}}, audio:false };
+
+    const constraints = {
+      video: deviceId
+        ? {
+            deviceId: { exact: deviceId },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        : {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+      audio: false
+    };
+
+    // 4. 실제 카메라 시작
+    setState('loading', '카메라 시작 중');
     stream = await navigator.mediaDevices.getUserMedia(constraints);
+
     el.camera.srcObject = stream;
     await el.camera.play();
-    await refreshCameras(deviceId);
-    running = true; filtered = null; setState('live','모션 캡처 중');
-    el.start.disabled=true; el.stop.disabled=false;
+
+    // 5. 모션 캡처 시작
+    running = true;
+    filtered = null;
+
+    setState('live', '모션 캡처 중');
+
+    el.start.disabled = true;
+    el.stop.disabled = false;
+
     showMessage('카메라 앞에서 움직여 보세요 ✨', true);
-    cancelAnimationFrame(raf); raf=requestAnimationFrame(loop);
-  } catch(e) {
+
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(loop);
+
+  } catch (e) {
     console.error(e);
-    setState('idle','대기 중');
-    showMessage(e.name==='NotAllowedError' ? '카메라 권한을 허용해 주세요.' : '카메라를 시작하지 못했어요. HTTPS인지 확인해 주세요.');
+
+    // 권한 거부
+    if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+      setState('idle', '카메라 권한 필요');
+      showMessage(
+        '카메라 권한이 필요해요. 브라우저 설정에서 카메라 접근을 허용해 주세요.',
+        true
+      );
+    }
+
+    // 카메라가 없는 경우
+    else if (e.name === 'NotFoundError') {
+      setState('idle', '카메라 없음');
+      showMessage('사용할 수 있는 카메라를 찾지 못했어요.', true);
+    }
+
+    // 기타 오류
+    else {
+      setState('idle', '시작 실패');
+      showMessage(
+        `카메라를 시작하지 못했어요: ${e.message || e.name}`,
+        true
+      );
+    }
+
+    el.start.disabled = false;
+    el.stop.disabled = true;
   }
 }
 
