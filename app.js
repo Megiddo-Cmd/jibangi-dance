@@ -53,6 +53,7 @@ let fattyBones = {};
 let fattyModelReady = false;
 let fattyRenderWidth = 0;
 let fattyRenderHeight = 0;
+let fattyFacingY = 0;
 
 const fattyRestWorld = {};
 
@@ -692,6 +693,79 @@ function normalizeAngle(
   return angle;
 }
 
+function updateFattyFacing(landmarks) {
+  if (!fattyModel) return;
+
+  const leftShoulder = getPoint(landmarks, 'leftShoulder');
+  const rightShoulder = getPoint(landmarks, 'rightShoulder');
+  const leftHip = getPoint(landmarks, 'leftHip');
+  const rightHip = getPoint(landmarks, 'rightHip');
+  const nose = getPoint(landmarks, 'nose');
+
+  const required = [
+    leftShoulder,
+    rightShoulder,
+    leftHip,
+    rightHip,
+  ];
+
+  if (required.some((point) => (point?.visibility ?? 0) < 0.25)) {
+    return;
+  }
+
+  const shoulderCenter = midpoint(leftShoulder, rightShoulder);
+  const hipCenter = midpoint(leftHip, rightHip);
+
+  // MediaPipe의 화면 좌표와 깊이축을 Three.js의 Y-up 좌표로 바꿉니다.
+  const across = new THREE.Vector3(
+    rightShoulder.x - leftShoulder.x,
+    -(rightShoulder.y - leftShoulder.y),
+    -((rightShoulder.z ?? 0) - (leftShoulder.z ?? 0))
+  );
+
+  const up = new THREE.Vector3(
+    shoulderCenter.x - hipCenter.x,
+    -(shoulderCenter.y - hipCenter.y),
+    -((shoulderCenter.z ?? 0) - (hipCenter.z ?? 0))
+  );
+
+  if (across.lengthSq() < 0.0001 || up.lengthSq() < 0.0001) {
+    return;
+  }
+
+  // 왼쪽→오른쪽 어깨 벡터와 골반→어깨 벡터의 외적이
+  // 사용자가 바라보는 방향(몸통의 앞면 법선)이 됩니다.
+  const normal = new THREE.Vector3()
+    .crossVectors(across.normalize(), up.normalize())
+    .normalize();
+
+  // 코의 깊이 정보가 안정적인 프레임에서는 법선의 앞/뒤 부호를 보정합니다.
+  if ((nose?.visibility ?? 0) >= 0.35) {
+    const face = new THREE.Vector3(
+      nose.x - shoulderCenter.x,
+      -(nose.y - shoulderCenter.y),
+      -((nose.z ?? 0) - (shoulderCenter.z ?? 0))
+    );
+
+    if (face.lengthSq() > 0.0001 && normal.dot(face) < 0) {
+      normal.negate();
+    }
+  }
+
+  const horizontalLength = Math.hypot(normal.x, normal.z);
+
+  if (horizontalLength < 0.08) {
+    return;
+  }
+
+  // Blender 기준 정면(-Y)은 glTF/Three.js 기준 +Z입니다.
+  // 따라서 +Z 정면은 0rad, 좌우 측면은 ±PI/2, 후면은 PI가 됩니다.
+  const targetY = Math.atan2(normal.x, normal.z);
+  const delta = normalizeAngle(targetY - fattyFacingY);
+  fattyFacingY += delta * 0.18;
+  fattyModel.rotation.y = fattyFacingY;
+}
+
 
 /* =========================================================
    THREE.JS / GLB RIG
@@ -994,6 +1068,8 @@ function updateRig(
       leftHip,
       rightHip
     );
+
+  updateFattyFacing(landmarks);
 
 
   /*
@@ -1308,13 +1384,12 @@ async function loadFattyModel() {
 
 
   /*
-   * GLB 기본 자세가 화면에서 눕는 문제를 수정
+   * fatty.glb는 Blender의 Z-up 씬을 glTF의 Y-up 좌표로
+   * 내보낸 상태입니다. 추가 X축 회전을 적용하면 모델이
+   * 옆으로 눕기 때문에 기본 회전은 사용하지 않습니다.
+   * Blender 기준 정면(-Y)은 glTF/Three.js에서 카메라 쪽(+Z)입니다.
    */
-  fattyModel.rotation.set(
-    Math.PI / 2,
-    0,
-    0
-  );
+  fattyModel.rotation.set(0, 0, 0);
 
   fattyModel.scale.setScalar(
     1
@@ -1697,6 +1772,11 @@ function stopCamera() {
   filteredLandmarks = null;
 
   lastPoseTime = 0;
+  fattyFacingY = 0;
+
+  if (fattyModel) {
+    fattyModel.rotation.y = 0;
+  }
 
   elements.camera.srcObject =
     null;
