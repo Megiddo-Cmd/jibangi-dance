@@ -766,9 +766,17 @@ function updateFattyFacing(landmarks) {
     return;
   }
 
+  // 코가 정면으로 보이고 몸통 법선도 카메라를 향하면
+  // 방향 추정값에 흔들리지 않고 지방이의 정면을 카메라에 고정합니다.
+  const isCameraFront =
+    (nose?.visibility ?? 0) >= 0.45 &&
+    Math.abs(normal.z) > Math.abs(normal.x) * 1.25;
+
   // Blender 기준 정면(-Y)은 glTF/Three.js 기준 +Z입니다.
   // 따라서 +Z 정면은 0rad, 좌우 측면은 ±PI/2, 후면은 PI가 됩니다.
-  let targetY = Math.atan2(normal.x, normal.z);
+  let targetY = isCameraFront
+    ? 0
+    : Math.atan2(normal.x, normal.z);
 
   // 화면은 거울 모드로 보여 주므로 실제 몸의 좌우 회전도
   // 렌더링 방향에 맞춰 반전합니다.
