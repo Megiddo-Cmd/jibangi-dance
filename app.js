@@ -61,14 +61,14 @@ const fattyRestWorld = {};
 const fattyBoneNames = [
   'body',
   'head',
-  'upperArm.L',
-  'forearm.L',
-  'upperArm.R',
-  'forearm.R',
-  'thigh.L',
-  'shin.L',
-  'thigh.R',
-  'shin.R',
+  'upperArmL',
+  'forearmL',
+  'upperArmR',
+  'forearmR',
+  'thighL',
+  'shinL',
+  'thighR',
+  'shinR',
 ];
 
 // 앱 의미 이름 → GLB 실제 본 이름
@@ -76,17 +76,17 @@ const fattyBoneMap = {
   Body: 'body',
   Head: 'head',
 
-  LeftUpperArm: 'upperArm.L',
-  LeftForearm: 'forearm.L',
+  LeftUpperArm: 'upperArmL',
+  LeftForearm: 'forearmL',
 
-  RightUpperArm: 'upperArm.R',
-  RightForearm: 'forearm.R',
+  RightUpperArm: 'upperArmR',
+  RightForearm: 'forearmR',
 
-  LeftUpperLeg: 'thigh.L',
-  LeftLowerLeg: 'shin.L',
+  LeftUpperLeg: 'thighL',
+  LeftLowerLeg: 'shinL',
 
-  RightUpperLeg: 'thigh.R',
-  RightLowerLeg: 'shin.R',
+  RightUpperLeg: 'thighR',
+  RightLowerLeg: 'shinR',
 };
 
 const landmarkIndex = {
@@ -883,6 +883,21 @@ function captureFattyRestPose() {
   }
 }
 
+function applyBoneWorldQuaternion(bone, desiredWorld) {
+  fattyModel.updateMatrixWorld(true);
+
+  if (bone.parent) {
+    const parentWorld = new THREE.Quaternion();
+    bone.parent.getWorldQuaternion(parentWorld);
+    bone.quaternion.copy(parentWorld.invert().multiply(desiredWorld));
+    return;
+  }
+
+  const modelWorld = new THREE.Quaternion();
+  fattyModel.getWorldQuaternion(modelWorld);
+  bone.quaternion.copy(modelWorld.invert().multiply(desiredWorld));
+}
+
 function aimBoneToScreenSegment(
   name,
   first,
@@ -924,71 +939,14 @@ function aimBoneToScreenSegment(
 
   target.normalize();
 
-  /*
-   * REST 방향 → 현재 MediaPipe 방향
-   */
-  const correction =
-    new THREE.Quaternion()
-      .setFromUnitVectors(
-        rest.axis,
-        target
-      );
+  // 팔·다리 본은 GLB 내부에서 XZ 기준으로 저장되어 있으므로
+  // 기준축을 현재 화면 선분에 직접 조준하되 Body 본에는 적용하지 않습니다.
+  const correction = new THREE.Quaternion()
+    .setFromUnitVectors(rest.axis, target);
 
-  const desiredWorld =
-    correction
-      .clone()
-      .multiply(
-        rest.worldQuat
-      );
-
-  /*
-   * 부모 본의 월드 회전 제거
-   */
-  if (
-    bone.parent &&
-    bone.parent.isBone
-  ) {
-    const parentWorld =
-      new THREE.Quaternion();
-
-    bone.parent.getWorldQuaternion(
-      parentWorld
-    );
-
-    bone.quaternion.copy(
-      parentWorld
-        .invert()
-        .multiply(
-          desiredWorld
-        )
-    );
-  } else {
-    const modelWorld =
-      new THREE.Quaternion();
-
-    fattyModel.getWorldQuaternion(
-      modelWorld
-    );
-
-    bone.quaternion.copy(
-      modelWorld
-        .invert()
-        .multiply(
-          desiredWorld
-        )
-    );
-  }
-}
-
-function aimHeadToPose(
-  name,
-  neck,
-  nose
-) {
-  aimBoneToScreenSegment(
-    name,
-    neck,
-    nose
+  applyBoneWorldQuaternion(
+    bone,
+    correction.multiply(rest.worldQuat)
   );
 }
 
@@ -1015,15 +973,7 @@ function aimBodyLean(first, second) {
     .setFromAxisAngle(new THREE.Vector3(0, 0, 1), roll)
     .multiply(rest.worldQuat);
 
-  if (bone.parent && bone.parent.isBone) {
-    const parentWorld = new THREE.Quaternion();
-    bone.parent.getWorldQuaternion(parentWorld);
-    bone.quaternion.copy(parentWorld.invert().multiply(desiredWorld));
-  } else {
-    const modelWorld = new THREE.Quaternion();
-    fattyModel.getWorldQuaternion(modelWorld);
-    bone.quaternion.copy(modelWorld.invert().multiply(desiredWorld));
-  }
+  applyBoneWorldQuaternion(bone, desiredWorld);
 }
 
 
@@ -1111,12 +1061,6 @@ function updateRig(
       'rightAnkle'
     );
 
-  const nose =
-    getPoint(
-      landmarks,
-      'nose'
-    );
-
   const shoulderCenter =
     midpoint(
       leftShoulder,
@@ -1169,18 +1113,6 @@ function updateRig(
   aimBodyLean(
     hipCenter,
     shoulderCenter
-  );
-
-
-  /*
-   * 머리
-   *
-   * 어깨 중앙 → 코
-   */
-  aimHeadToPose(
-    'Head',
-    shoulderCenter,
-    nose
   );
 
 
@@ -1441,6 +1373,14 @@ async function loadFattyModel() {
     }
   );
 
+  if (new URLSearchParams(window.location.search).has('debug-pose')) {
+    const nodes = [];
+    fattyModel.traverse((object) => {
+      nodes.push({ name: object.name, type: object.type, isBone: Boolean(object.isBone) });
+    });
+    console.log(JSON.stringify({ label: 'fatty nodes', nodes }));
+  }
+
 
   /*
    * fatty.glb는 Blender의 Z-up 씬을 glTF의 Y-up 좌표로
@@ -1464,6 +1404,19 @@ async function loadFattyModel() {
 
   captureFattyRestPose();
 
+  if (new URLSearchParams(window.location.search).has('debug-pose')) {
+    console.log(JSON.stringify({
+      label: 'fatty rest axes',
+      bones: Object.keys(fattyBones),
+      axes: Object.fromEntries(
+        Object.entries(fattyRestWorld).map(([name, rest]) => [
+          name,
+          rest.axis.toArray().map((value) => Number(value.toFixed(3))),
+        ])
+      )
+    }));
+  }
+
   fattyModelReady =
     true;
 
@@ -1478,6 +1431,28 @@ async function loadFattyModel() {
     fattyScene,
     fattyCamera
   );
+
+  if (new URLSearchParams(window.location.search).has('debug-pose')) {
+    const debugPose = Array.from({ length: 33 }, () => ({
+      x: 0.5,
+      y: 0.5,
+      z: 0,
+      visibility: 1,
+    }));
+    const points = {
+      0: [0.5, 0.18], 7: [0.46, 0.22], 8: [0.54, 0.22],
+      11: [0.4, 0.32], 12: [0.6, 0.32], 13: [0.32, 0.48],
+      14: [0.68, 0.48], 15: [0.27, 0.62], 16: [0.73, 0.62],
+      23: [0.44, 0.58], 24: [0.56, 0.58], 25: [0.42, 0.78],
+      26: [0.58, 0.78], 27: [0.4, 0.96], 28: [0.6, 0.96],
+    };
+    Object.entries(points).forEach(([index, [x, y]]) => {
+      debugPose[index].x = x;
+      debugPose[index].y = y;
+    });
+    updateRig(debugPose, debugPose);
+    setRigVisible(true);
+  }
 
 }
 
