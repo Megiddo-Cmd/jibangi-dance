@@ -992,6 +992,40 @@ function aimHeadToPose(
   );
 }
 
+function aimBodyLean(first, second) {
+  const bone = fattyBones.body;
+  const rest = fattyRestWorld.body;
+
+  if (!bone || !rest) return;
+
+  const target = new THREE.Vector3(
+    second.x - first.x,
+    -(second.y - first.y),
+    0
+  );
+
+  if (target.lengthSq() < 0.000001) return;
+
+  target.normalize();
+
+  // 몸통은 카메라를 향한 축을 유지한 채 화면 안에서만 기울입니다.
+  // 전체 3D 방향으로 aim하면 body 본이 모델을 탑뷰로 눕힐 수 있습니다.
+  const roll = Math.atan2(-target.x, target.y);
+  const desiredWorld = new THREE.Quaternion()
+    .setFromAxisAngle(new THREE.Vector3(0, 0, 1), roll)
+    .multiply(rest.worldQuat);
+
+  if (bone.parent && bone.parent.isBone) {
+    const parentWorld = new THREE.Quaternion();
+    bone.parent.getWorldQuaternion(parentWorld);
+    bone.quaternion.copy(parentWorld.invert().multiply(desiredWorld));
+  } else {
+    const modelWorld = new THREE.Quaternion();
+    fattyModel.getWorldQuaternion(modelWorld);
+    bone.quaternion.copy(modelWorld.invert().multiply(desiredWorld));
+  }
+}
+
 
 /* =========================================================
    RIG UPDATE
@@ -1132,8 +1166,7 @@ function updateRig(
    *
    * 골반 → 어깨
    */
-  aimBoneToScreenSegment(
-    'Body',
+  aimBodyLean(
     hipCenter,
     shoulderCenter
   );
@@ -1445,6 +1478,7 @@ async function loadFattyModel() {
     fattyScene,
     fattyCamera
   );
+
 }
 
 
