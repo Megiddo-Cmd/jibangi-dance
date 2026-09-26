@@ -709,7 +709,7 @@ function updateFattyFacing(landmarks) {
     rightHip,
   ];
 
-  if (required.some((point) => (point?.visibility ?? 0) < 0.25)) {
+  if (required.some((point) => (point?.visibility ?? 1) < 0.1)) {
     return;
   }
 
@@ -717,11 +717,19 @@ function updateFattyFacing(landmarks) {
   const hipCenter = midpoint(leftHip, rightHip);
 
   // MediaPipe의 화면 좌표와 깊이축을 Three.js의 Y-up 좌표로 바꿉니다.
-  const across = new THREE.Vector3(
+  const shoulderAcross = new THREE.Vector3(
     rightShoulder.x - leftShoulder.x,
     -(rightShoulder.y - leftShoulder.y),
     -((rightShoulder.z ?? 0) - (leftShoulder.z ?? 0))
   );
+
+  const hipAcross = new THREE.Vector3(
+    rightHip.x - leftHip.x,
+    -(rightHip.y - leftHip.y),
+    -((rightHip.z ?? 0) - (leftHip.z ?? 0))
+  );
+
+  const across = shoulderAcross.add(hipAcross);
 
   const up = new THREE.Vector3(
     shoulderCenter.x - hipCenter.x,
@@ -760,9 +768,18 @@ function updateFattyFacing(landmarks) {
 
   // Blender 기준 정면(-Y)은 glTF/Three.js 기준 +Z입니다.
   // 따라서 +Z 정면은 0rad, 좌우 측면은 ±PI/2, 후면은 PI가 됩니다.
-  const targetY = Math.atan2(normal.x, normal.z);
+  let targetY = Math.atan2(normal.x, normal.z);
+
+  // 화면은 거울 모드로 보여 주므로 실제 몸의 좌우 회전도
+  // 렌더링 방향에 맞춰 반전합니다.
+  if (isMirrored) {
+    targetY *= -1;
+  }
+
   const delta = normalizeAngle(targetY - fattyFacingY);
-  fattyFacingY += delta * 0.18;
+  fattyFacingY = normalizeAngle(
+    fattyFacingY + delta * 0.18
+  );
   fattyModel.rotation.y = fattyFacingY;
 }
 
@@ -973,7 +990,8 @@ function aimHeadToPose(
 ========================================================= */
 
 function updateRig(
-  landmarks
+  landmarks,
+  orientationLandmarks = landmarks
 ) {
   if (!fattyModelReady) {
     return;
@@ -1069,7 +1087,7 @@ function updateRig(
       rightHip
     );
 
-  updateFattyFacing(landmarks);
+  updateFattyFacing(orientationLandmarks);
 
 
   /*
@@ -1917,7 +1935,8 @@ function processFrame(now) {
     now;
 
   updateRig(
-    landmarks
+    landmarks,
+    rawLandmarks
   );
 
   updateStats(
