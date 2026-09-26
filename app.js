@@ -1415,8 +1415,7 @@ async function loadFattyModel() {
    * 옆으로 눕기 때문에 기본 회전은 사용하지 않습니다.
    * Blender 기준 정면(-Y)은 glTF/Three.js에서 카메라 쪽(+Z)입니다.
    */
-  fattyModel.rotation.set(0, 0, 0);
-
+  fattyModel.rotation.set(Math.PI / 2, 0, 0);
   fattyModel.scale.setScalar(
     1
   );
