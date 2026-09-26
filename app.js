@@ -1336,10 +1336,9 @@ async function loadFattyModel() {
 
   resizeFattyRenderer();
 
-  // GLB가 정상적으로 로드되었는지 바로 확인할 수 있도록
-  // 포즈 검출 전에도 기본 자세의 모델을 보여 줍니다.
+  // 포즈가 검출되기 전에는 모델을 숨겨 둡니다.
   setRigVisible(
-    true
+    false
   );
 
   fattyRenderer.render(
@@ -1821,6 +1820,15 @@ function processFrame(now) {
 
 
   if (confidence < 0.2) {
+    if (now - lastPoseTime > 450) {
+      setRigVisible(false);
+      elements.confidenceValue.textContent = '--';
+      showMessage(
+        '몸 전체가 보이도록 조금만 뒤로 가 주세요',
+        true
+      );
+    }
+
     return;
   }
 
